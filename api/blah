@@ -1,0 +1,106 @@
+# Importing necessary libraries and modules
+import json
+from flask import Blueprint, request, jsonify
+from flask_restful import Api, Resource
+from auth_middleware import token_required  # Middleware for handling token authentication
+from model.recipe import Recipe  # Importing the Recipe class from the model module
+
+# Setting up a Blueprint for the recipe API
+recipe_api = Blueprint('recipe_api', __name__, url_prefix='/api/recipe')
+api = Api(recipe_api)  # Creating an API object associated with the Blueprint
+
+class RecipeAPI:
+    class _CRUD(Resource):
+        def post(self):
+            # Check if the incoming request is in JSON format
+            if request.is_json:
+                # Extract JSON data from the request
+                data = request.get_json()
+
+                # Check if all required fields are axpresent in the request
+                required_fields = ['recipeName', 'recipeInstructions', 'recipeIngredients']
+                if not all(field in data for field in required_fields):
+                    return {'message': 'Missing required fields: recipeName, recipeInstructions, recipeIngredients'}, 400
+
+                # Validate data format and constraints
+                recipe_name = data['recipeName']
+                recipe_instructions = data['recipeInstructions']
+                recipe_ingredients = data['recipeIngredients']
+
+                if not isinstance(recipe_name, str) or len(recipe_name) == 0:
+                    return {'message': 'Invalid recipeName: should be a non-empty string'}, 400
+
+                if not isinstance(recipe_instructions, str) or len(recipe_instructions) == 0:
+                    return {'message': 'Invalid recipeInstructions: should be a non-empty string'}, 400
+
+                if not isinstance(recipe_ingredients, list) or any(not isinstance(ingredient, str) for ingredient in recipe_ingredients):
+                    return {'message': 'Invalid recipeIngredients: should be a non-empty list of strings'}, 400
+
+                # Optional: Additional custom validation logic here...
+
+                # Create a new Recipe object with the extracted data
+                recipe = Recipe(
+                    name=recipe_name,
+                    instruction=recipe_instructions,
+                    ingredients=recipe_ingredients,
+                    supplies=data.get('recommendedSupplies')  # Optional field
+                )
+
+                # Attempt to save the new recipe object to the database
+                try:
+                    ro = recipe.create()  # Assuming there's a create method in Recipe class
+                    return jsonify(ro.read()), 201  # Return created recipe with status code 201 (Created)
+                except Exception as e:
+                    return {'message': f'Failed to upload recipe: {str(e)}'}, 500
+
+            # Return an error message if the request data is not in JSON format
+            else:
+                return {'message': 'Request body must be in JSON format'}, 400
+
+        # Method to handle GET requests for retrieving all recipes
+        def get(self):
+            # Querying all recipe entries from the database
+            recipes = Recipe.query.all()
+            # Converting each recipe object to a JSON-ready format using the read method
+            json_ready = [recipe.read() for recipe in recipes]
+            # Returning the list of recipes in JSON format
+            return jsonify(json_ready)
+        def put(self, recipe_id):
+            # Check if the incoming request is in JSON format
+            if request.is_json:
+                # Extracting JSON data from the request
+                data = request.get_json()
+
+                # Query the database to find the recipe by ID
+                recipe = Recipe.query.get(recipe_id)
+
+                # If recipe with the specified ID doesn't exist, return 404 Not Found
+                if not recipe:
+                    return {'message': 'Recipe not found'}, 404
+
+                # Update the recipe fields based on the provided JSON data
+                if 'recipeName' in data:
+                    recipe.name = data['recipeName']
+                if 'recipeInstructions' in data:
+                    recipe.instruction = data['recipeInstructions']
+                if 'recipeIngredients' in data:
+                    recipe.ingredients = data['recipeIngredients']
+                if 'recommendedSupplies' in data:
+                    recipe.supplies = data['recommendedSupplies']
+
+                # Attempt to save the updated recipe to the database
+                try:
+                    recipe.update()  # Assuming there's an update method in Recipe class
+                    return jsonify(recipe.read()), 200  # Return updated recipe with status code 200 (OK)
+                except Exception as e:
+                    return {'message': f'Failed to update recipe: {str(e)}'}, 500
+
+            # Returning an error message if the request data is not in JSON format
+            else:
+                return {'message': 'Request body must be in JSON format'}, 400
+
+        # Placeholder for additional CRUD operations (PUT, DELETE, etc.)
+
+    # Adding the CRUD class as a resource to the API at the root endpoint
+    api.add_resource(_CRUD, '/')
+    
